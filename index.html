@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RT-DETR 物件偵測</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 60px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9ff;
+        }
+        
+        .upload-area:hover {
+            background: #e8ebff;
+            border-color: #764ba2;
+            transform: translateY(-2px);
+        }
+        
+        .upload-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .slider-container label {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        input[type="range"] {
+            width: 200px;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            outline: none;
+        }
+        
+        .threshold-value {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            min-width: 60px;
+            text-align: center;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .preview-container {
+            margin: 30px 0;
+            text-align: center;
+        }
+        
+        canvas {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .results {
+            background: #f8f9ff;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            display: none;
+        }
+        
+        .results h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .detection-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .detection-item {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .detection-item strong {
+            color: #667eea;
+            font-size: 1.1em;
+        }
+        
+        .confidence {
+            display: inline-block;
+            background: #4caf50;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .stat-box {
+            background: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 RT-DETR 物件偵測</h1>
+        <p class="subtitle">Real-Time Detection Transformer</p>
+        
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-icon">📸</div>
+            <h3>點擊上傳圖片</h3>
+            <p style="color: #666; margin-top: 10px;">支援 JPG、PNG 格式</p>
+        </div>
+        
+        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+        
+        <div class="controls">
+            <div class="slider-container">
+                <label>信心度閾值:</label>
+                <input type="range" id="confSlider" min="0" max="100" value="50" step="5">
+                <span class="threshold-value" id="confValue">0.50</span>
+            </div>
+            <button id="detectBtn" disabled>🔍 開始偵測</button>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p style="color: #667eea; font-size: 1.2em;">正在分析圖片...</p>
+        </div>
+        
+        <div class="preview-container">
+            <canvas id="canvas"></canvas>
+        </div>
+        
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/detect';
+        const fileInput = document.getElementById('fileInput');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const detectBtn = document.getElementById('detectBtn');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const confSlider = document.getElementById('confSlider');
+        const confValue = document.getElementById('confValue');
+
+        let currentImage = null;
+        let currentFile = null;
+
+        // 信心度滑桿
+        confSlider.addEventListener('input', function() {
+            const value = (this.value / 100).toFixed(2);
+            confValue.textContent = value;
+        });
+
+        // 文件選擇
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                currentFile = file;
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    currentImage = new Image();
+                    currentImage.onload = function() {
+                        canvas.width = currentImage.width;
+                        canvas.height = currentImage.height;
+                        ctx.drawImage(currentImage, 0, 0);
+                        detectBtn.disabled = false;
+                    };
+                    currentImage.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // 偵測按鈕
+        detectBtn.addEventListener('click', async function() {
+            if (!currentFile) return;
+
+            loading.style.display = 'block';
+            detectBtn.disabled = true;
+            results.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+            
+            const threshold = parseFloat(confValue.textContent);
+
+            try {
+                const response = await fetch(`${API_URL}?conf_threshold=${threshold}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    alert('偵測失敗: ' + data.error);
+                }
+            } catch (error) {
+                alert('發生錯誤: ' + error.message);
+                console.error('Error:', error);
+            } finally {
+                loading.style.display = 'none';
+                detectBtn.disabled = false;
+            }
+        });
+
+        function displayResults(data) {
+            const detections = data.detections;
+            
+            // 重繪圖片
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(currentImage, 0, 0);
+
+            // 顏色池
+            const colors = [
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', 
+                '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'
+            ];
+
+            // 繪製偵測框
+            detections.forEach((det, idx) => {
+                const [x1, y1, x2, y2] = det.bbox;
+                const color = colors[det.class % colors.length];
+                
+                // 繪製邊框
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                
+                // 繪製標籤背景
+                // if (det.class_name == 'class_2'){
+                //     class_name = 'car'
+                // }
+                // else if (det.class_name == 'class_3'){
+                //     class_name == 'motorcycle'
+                // }
+
+                // const label = `${class_name} `;
+                // ctx.font = 'bold 16px Arial';
+                // const textWidth = ctx.measureText(label).width;
+                
+                // ctx.fillStyle = color;
+                // ctx.fillRect(x1, y1 - 30, textWidth + 20, 30);
+                
+                // // 繪製標籤文字
+                // ctx.fillStyle = 'white';
+                // ctx.fillText(label, x1 + 10, y1 - 8);
+            });
+
+            // 統計類別
+            const classCount = {};
+            detections.forEach(det => {
+                classCount[det.class_name] = (classCount[det.class_name] || 0) + 1;
+            });
+
+            // 顯示結果
+            results.innerHTML = `
+                <h3>📊 偵測結果</h3>
+                
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-number">${detections.length}</div>
+                        <div class="stat-label">偵測物件</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${Object.keys(classCount).length}</div>
+                        <div class="stat-label">類別數量</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${data.image_size.width} × ${data.image_size.height}</div>
+                        <div class="stat-label">圖片尺寸</div>
+                    </div>
+                </div>
+
+                <div class="detection-list">
+                    ${detections.map((det, idx) => `
+                        <div class="detection-item">
+                            <strong>${idx + 1}. ${det.class_name}</strong>
+                            <div class="confidence">${(det.score * 100).toFixed(2)}%</div>
+                            <div style="margin-top: 8px; font-size: 0.9em; color: #666;">
+                                位置: (${Math.round(det.bbox[0])}, ${Math.round(det.bbox[1])})
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            results.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
