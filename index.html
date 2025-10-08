@@ -331,55 +331,52 @@
                 <h1>Object Detection</h1>
                 <p class="subtitle">Real-Time Detection Transformer</p>
 
-                <!-- 欲偵測內容 -->
-                <div style="margin-bottom: 40px;">
-
-                    <div class="controls">
-                        <div class="slider-container">
-                            <label>信心度閾值:</label>
-                            <span class="threshold-value" id="confValue">0.50</span>
-                        </div>
-                        <button id="detectBtn">🔍 開始偵測</button>
+                <!-- 控制按鈕區 -->
+                <div class="controls">
+                    <div class="slider-container">
+                        <label>信心度閾值:</label>
+                        <span class="threshold-value" id="confValue">0.50</span>
                     </div>
-
-                    <div class="loading" id="loading">
-                        <div class="spinner"></div>
-                        <p style="color: #667eea; font-size: 1.2em;">正在分析圖片...</p>
-                    </div>
-
-                    <div class="preview-container">
-                        <canvas id="canvas"></canvas>
-                    </div>
+                    <button id="detectBtn">🔍 開始偵測</button>
                 </div>
 
-                <!-- 綜觀數據 -->
-                <div style="margin-top: 40px;">
-                    <h2 style="color: #667eea; margin-bottom: 20px;">綜觀數據</h2>
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p style="color: #667eea; font-size: 1.2em;">正在分析圖片...</p>
+                </div>
 
-                    <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
-                        <div class="stat-box">
-                            <div class="stat-number" id="totalDetections">0</div>
-                            <div class="stat-label">總偵測物件</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-number" id="totalCars">0</div>
-                            <div class="stat-label">汽車數量</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-number" id="totalMotorcycles">0</div>
-                            <div class="stat-label">機車數量</div>
-                        </div>
-                        <div class="stat-box">
-                            <div class="stat-number" id="avgConfidence">0%</div>
-                            <div class="stat-label">平均信心度</div>
+                <!-- 左右布局容器 -->
+                <div style="display: flex; gap: 30px; align-items: flex-start; margin-top: 20px;">
+                    <!-- 左側：欲偵測內容 -->
+                    <div style="flex: 0 0 auto;">
+                        <div class="preview-container">
+                            <canvas id="canvas"></canvas>
                         </div>
                     </div>
 
-                    <!-- 可以添加更多數據視覺化，例如圖表 -->
-                    <!-- <div style="margin-top: 30px; padding: 20px; background: #f8f9ff; border-radius: 10px;">
-                        <h4 style="color: #667eea; margin-bottom: 10px;">📈 數據趨勢圖</h4>
-                        <p style="color: #666;">（此處可加入 Chart.js 或其他圖表庫）</p>
-                    </div> -->
+                    <!-- 右側：綜觀數據 -->
+                    <div style="flex: 1; margin-top: 40px;">
+                        <h2 style="color: #667eea; margin-bottom: 20px;">綜觀數據</h2>
+
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
+                            <div class="stat-box">
+                                <div class="stat-number" id="totalDetections">0</div>
+                                <div class="stat-label">總偵測物件</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number" id="totalCars">0</div>
+                                <div class="stat-label">汽車數量</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number" id="totalMotorcycles">0</div>
+                                <div class="stat-label">機車數量</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number" id="avgConfidence">0%</div>
+                                <div class="stat-label">平均信心度</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
