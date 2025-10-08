@@ -212,8 +212,8 @@ async def detect_objects(file: UploadFile = File(...), conf_threshold: float = 0
             }
         )
 
-@app.get("/")
-async def root():
+@app.get("/api")
+async def api_root():
     return {
         "message": "RT-DETR 物件偵測 API",
         "model": MODEL_PATH,
@@ -223,6 +223,18 @@ async def root():
             "classes": "/classes"
         }
     }
+
+@app.get("/")
+async def serve_html():
+    """提供 html 頁面"""
+    from fastapi.responses import FileResponse
+    return FileResponse("index.html")
+
+@app.get("/{filename}")
+async def serve_static(filename: str):
+    """提供靜態檔案（圖片等）"""
+    from fastapi.responses import FileResponse
+    return FileResponse(filename)
 
 @app.get("/classes")
 async def get_classes():
