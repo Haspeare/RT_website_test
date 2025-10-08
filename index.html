@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RT-DETR 物件偵測</title>
+    <title>車流辨識後台系統</title>
     <style>
         * {
             margin: 0;
@@ -15,12 +15,85 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            display: flex;
+            margin: 0;
+        }
+
+        /* 側邊欄 */
+        .sidebar {
+            width: 250px;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            padding: 20px 0;
+            position: fixed;
+            height: 100vh;
+            left: 0;
+            top: 0;
+        }
+
+        .sidebar-header {
+            padding: 0 20px 20px;
+            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 20px;
+        }
+
+        .sidebar-header h2 {
+            color: #667eea;
+            font-size: 1.5em;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+        }
+
+        .sidebar-menu li {
+            margin: 0;
+        }
+
+        .sidebar-menu a {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            color: #333;
+            text-decoration: none;
+            transition: all 0.3s;
+            border-left: 4px solid transparent;
+        }
+
+        .sidebar-menu a:hover {
+            background: #f8f9ff;
+            border-left-color: #667eea;
+        }
+
+        .sidebar-menu a.active {
+            background: #f8f9ff;
+            border-left-color: #667eea;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .sidebar-menu a .icon {
+            font-size: 1.3em;
+            margin-right: 12px;
+            width: 25px;
+        }
+
+        /* 主要內容區 */
+        .main-content {
+            margin-left: 250px;
+            flex: 1;
             padding: 20px;
         }
-        
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
             background: white;
             border-radius: 20px;
             padding: 40px;
@@ -229,42 +302,124 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🎯 RT-DETR 物件偵測</h1>
-        <p class="subtitle">Real-Time Detection Transformer</p>
-        
-        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
-            <div class="upload-icon">📸</div>
-            <h3>點擊上傳圖片</h3>
-            <p style="color: #666; margin-top: 10px;">支援 JPG、PNG 格式</p>
+    <!-- 側邊欄 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>車流辨識模擬系統</h2>
         </div>
-        
-        <input type="file" id="fileInput" accept="image/*" style="display: none;">
-        
-        <div class="controls">
-            <div class="slider-container">
-                <label>信心度閾值:</label>
-                <input type="range" id="confSlider" min="0" max="100" value="50" step="5">
-                <span class="threshold-value" id="confValue">0.50</span>
+        <ul class="sidebar-menu">
+            <li>
+                <a href="#" class="menu-link active" data-page="home">
+                    <span class="icon">🏠</span>
+                    <span>主頁</span>
+                </a>
+            </li>
+            <li>
+                <a href="#" class="menu-link" data-page="detection">
+                    <span class="icon">📊</span>
+                    <span>後台數據</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- 主要內容區 -->
+    <div class="main-content">
+        <!-- 主頁 -->
+        <div id="home" class="page active">
+            <div class="container">
+                <h1>Object Detection</h1>
+                <p class="subtitle">Real-Time Detection Transformer</p>
+
+                <!-- 欲偵測內容 -->
+                <div style="margin-bottom: 40px;">
+
+                    <div class="controls">
+                        <div class="slider-container">
+                            <label>信心度閾值:</label>
+                            <span class="threshold-value" id="confValue">0.50</span>
+                        </div>
+                        <button id="detectBtn">🔍 開始偵測</button>
+                    </div>
+
+                    <div class="loading" id="loading">
+                        <div class="spinner"></div>
+                        <p style="color: #667eea; font-size: 1.2em;">正在分析圖片...</p>
+                    </div>
+
+                    <div class="preview-container">
+                        <canvas id="canvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- 綜觀數據 -->
+                <div style="margin-top: 40px;">
+                    <h2 style="color: #667eea; margin-bottom: 20px;">綜觀數據</h2>
+
+                    <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                        <div class="stat-box">
+                            <div class="stat-number" id="totalDetections">0</div>
+                            <div class="stat-label">總偵測物件</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-number" id="totalCars">0</div>
+                            <div class="stat-label">汽車數量</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-number" id="totalMotorcycles">0</div>
+                            <div class="stat-label">機車數量</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-number" id="avgConfidence">0%</div>
+                            <div class="stat-label">平均信心度</div>
+                        </div>
+                    </div>
+
+                    <!-- 可以添加更多數據視覺化，例如圖表 -->
+                    <!-- <div style="margin-top: 30px; padding: 20px; background: #f8f9ff; border-radius: 10px;">
+                        <h4 style="color: #667eea; margin-bottom: 10px;">📈 數據趨勢圖</h4>
+                        <p style="color: #666;">（此處可加入 Chart.js 或其他圖表庫）</p>
+                    </div> -->
+                </div>
             </div>
-            <button id="detectBtn" disabled>🔍 開始偵測</button>
         </div>
-        
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p style="color: #667eea; font-size: 1.2em;">正在分析圖片...</p>
+
+        <!-- 後台數據頁面 -->
+        <div id="detection" class="page">
+            <div class="container">
+                <h1>後台數據</h1>
+                <p class="subtitle">偵測結果詳細資訊</p>
+
+                <div class="results" id="results">
+                    <p style="text-align: center; color: #666; padding: 40px;">尚無偵測結果，請先在主頁執行偵測</p>
+                </div>
+            </div>
         </div>
-        
-        <div class="preview-container">
-            <canvas id="canvas"></canvas>
-        </div>
-        
-        <div class="results" id="results"></div>
     </div>
 
     <script>
-        const API_URL = 'http://localhost:8000/detect';
-        const fileInput = document.getElementById('fileInput');
+        // 頁面切換功能
+        const menuLinks = document.querySelectorAll('.menu-link');
+        const pages = document.querySelectorAll('.page');
+
+        menuLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetPage = this.getAttribute('data-page');
+
+                // 移除所有 active 類別
+                menuLinks.forEach(l => l.classList.remove('active'));
+                pages.forEach(p => p.classList.remove('active'));
+
+                // 添加 active 到當前選項
+                this.classList.add('active');
+                document.getElementById(targetPage).classList.add('active');
+            });
+        });
+
+        // 偵測功能
+        const API_URL = 'http://localhost:5000/detect';
+        const FIXED_IMAGE_PATH = '13.jpg'; // 固定的圖片路徑
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const detectBtn = document.getElementById('detectBtn');
@@ -274,55 +429,42 @@
         const confValue = document.getElementById('confValue');
 
         let currentImage = null;
-        let currentFile = null;
 
-        // 信心度滑桿
-        confSlider.addEventListener('input', function() {
-            const value = (this.value / 100).toFixed(2);
-            confValue.textContent = value;
-        });
-
-        // 文件選擇
-        fileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                currentFile = file;
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    currentImage = new Image();
-                    currentImage.onload = function() {
-                        canvas.width = currentImage.width;
-                        canvas.height = currentImage.height;
-                        ctx.drawImage(currentImage, 0, 0);
-                        detectBtn.disabled = false;
-                    };
-                    currentImage.src = event.target.result;
-                };
-                reader.readAsDataURL(file);
-            }
+        // 載入固定圖片
+        window.addEventListener('load', function() {
+            currentImage = new Image();
+            currentImage.onload = function() {
+                canvas.width = currentImage.width;
+                canvas.height = currentImage.height;
+                ctx.drawImage(currentImage, 0, 0);
+            };
+            currentImage.src = FIXED_IMAGE_PATH;
         });
 
         // 偵測按鈕
         detectBtn.addEventListener('click', async function() {
-            if (!currentFile) return;
-
             loading.style.display = 'block';
             detectBtn.disabled = true;
             results.style.display = 'none';
 
-            const formData = new FormData();
-            formData.append('file', currentFile);
-            
             const threshold = parseFloat(confValue.textContent);
 
             try {
-                const response = await fetch(`${API_URL}?conf_threshold=${threshold}`, {
+                // 取得固定圖片的 blob
+                const response = await fetch(FIXED_IMAGE_PATH);
+                const blob = await response.blob();
+                const file = new File([blob], FIXED_IMAGE_PATH, { type: blob.type });
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const detectResponse = await fetch(`${API_URL}?conf_threshold=${threshold}`, {
                     method: 'POST',
                     body: formData
                 });
 
-                const data = await response.json();
-                
+                const data = await detectResponse.json();
+
                 if (data.success) {
                     displayResults(data);
                 } else {
@@ -339,14 +481,14 @@
 
         function displayResults(data) {
             const detections = data.detections;
-            
+
             // 重繪圖片
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(currentImage, 0, 0);
 
             // 顏色池
             const colors = [
-                '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', 
+                '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
                 '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'
             ];
 
@@ -354,30 +496,11 @@
             detections.forEach((det, idx) => {
                 const [x1, y1, x2, y2] = det.bbox;
                 const color = colors[det.class % colors.length];
-                
+
                 // 繪製邊框
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 3;
                 ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-                
-                // 繪製標籤背景
-                // if (det.class_name == 'class_2'){
-                //     class_name = 'car'
-                // }
-                // else if (det.class_name == 'class_3'){
-                //     class_name == 'motorcycle'
-                // }
-
-                // const label = `${class_name} `;
-                // ctx.font = 'bold 16px Arial';
-                // const textWidth = ctx.measureText(label).width;
-                
-                // ctx.fillStyle = color;
-                // ctx.fillRect(x1, y1 - 30, textWidth + 20, 30);
-                
-                // // 繪製標籤文字
-                // ctx.fillStyle = 'white';
-                // ctx.fillText(label, x1 + 10, y1 - 8);
             });
 
             // 統計類別
@@ -385,6 +508,18 @@
             detections.forEach(det => {
                 classCount[det.class_name] = (classCount[det.class_name] || 0) + 1;
             });
+
+            // 更新綜觀數據
+            const totalCars = classCount['car'] || 0;
+            const totalMotorcycles = classCount['motorcycle'] || 0;
+            const avgConf = detections.length > 0
+                ? (detections.reduce((sum, det) => sum + det.score, 0) / detections.length * 100).toFixed(1)
+                : 0;
+
+            document.getElementById('totalDetections').textContent = detections.length;
+            document.getElementById('totalCars').textContent = totalCars;
+            document.getElementById('totalMotorcycles').textContent = totalMotorcycles;
+            document.getElementById('avgConfidence').textContent = avgConf + '%';
 
             // 顯示結果
             results.innerHTML = `
