@@ -299,6 +299,39 @@
             color: #666;
             margin-top: 5px;
         }
+        
+        .video-frame {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+        }
+
+        .video-frame iframe {
+            width: 100%;
+            height: 500px;
+            border: none;
+            display: block;
+            overflow: hidden;
+        }
+
+        /* 隱藏 iframe 內的滾動條 */
+        .video-frame iframe::-webkit-scrollbar {
+            display: none;
+        }
+
+        .video-label {
+            background: rgba(102, 126, 234, 0.95);
+            color: white;
+            padding: 12px 20px;
+            font-weight: 600;
+            font-size: 1.1em;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 <body>
@@ -342,26 +375,35 @@
 
                 <div class="loading" id="loading">
                     <div class="spinner"></div>
-                    <p style="color: #667eea; font-size: 1.2em;">正在分析圖片...</p>
+                    <p style="color: #667eea; font-size: 1.2em;">分析結果處理中...</p>
                 </div>
 
                 <!-- 左右布局容器 -->
-                <div style="display: flex; gap: 30px; align-items: flex-start; margin-top: 20px;">
-                    <!-- 左側：欲偵測內容 -->
-                    <div style="flex: 0 0 auto;">
-                        <div class="preview-container">
-                            <canvas id="canvas"></canvas>
+                <div style="display: flex; gap: 40px; align-items: flex-start; margin-top: 30px; flex-wrap: wrap;">
+                    <!-- 左側：即時檢測影像 -->
+                    <div style="flex: 1; min-width: 400px; max-width: 640px;">
+                        <div style="position: relative;">
+                            <div style="background: rgba(102, 126, 234, 0.95); color: white; padding: 12px 20px; font-weight: 600; font-size: 1.1em; text-align: center; letter-spacing: 0.5px; border-radius: 15px 15px 0 0;">
+                                📹 即時檢測結果
+                            </div>
+                            <div style="position: relative; background: #000; border-radius: 0 0 15px 15px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.3); width: 100%; max-width: 640px; min-height: 400px;">
+                                <img id="detectionImage"
+                                     alt="檢測結果"
+                                     style="width: 100%; height: auto; display: none;">
+                                <div id="noImagePlaceholder" style="color: #999; font-size: 1.2em; text-align: center; padding: 200px 40px;">
+                                    請點擊「開始偵測」來查看即時檢測結果
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- 右側：綜觀數據 -->
-                    <div style="flex: 1; margin-top: 40px;">
-                        <h2 style="color: #667eea; margin-bottom: 20px;">綜觀數據</h2>
-
-                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
+                    <div style="flex: 1; min-width: 400px;">
+                        <h2 style="color: #667eea; margin-bottom: 25px; font-size: 1.8em; text-align: left;">📊 綜觀數據</h2>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
                             <div class="stat-box">
                                 <div class="stat-number" id="totalDetections">0</div>
-                                <div class="stat-label">總偵測物件</div>
+                                <div class="stat-label">當前偵測物件</div>
                             </div>
                             <div class="stat-box">
                                 <div class="stat-number" id="totalCars">0</div>
@@ -395,6 +437,43 @@
     </div>
 
     <script>
+        // 頁面載入時重置所有狀態
+        window.addEventListener('load', function() {
+            console.log('🔄 頁面已刷新，重置所有狀態');
+            // 重置所有計數器
+            totalDetections = 0;
+            totalCars = 0;
+            totalMotorcycles = 0;
+            detectCount = 0;
+            isDetecting = false;
+
+            // 重置按鈕狀態
+            const detectBtn = document.getElementById('detectBtn');
+            if (detectBtn) {
+                detectBtn.textContent = '🔍 開始偵測';
+                detectBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
+
+            // 隱藏檢測圖片
+            const detectionImage = document.getElementById('detectionImage');
+            if (detectionImage) {
+                detectionImage.style.display = 'none';
+                detectionImage.src = '';
+            }
+
+            // 顯示佔位符
+            const placeholder = document.getElementById('noImagePlaceholder');
+            if (placeholder) {
+                placeholder.style.display = 'block';
+            }
+
+            // 隱藏載入動畫
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.style.display = 'none';
+            }
+        });
+
         // 頁面切換功能
         const menuLinks = document.querySelectorAll('.menu-link');
         const pages = document.querySelectorAll('.page');
@@ -415,142 +494,148 @@
         });
 
         // 偵測功能
-        const API_URL = 'http://localhost:5000/detect';
-        const FIXED_IMAGE_PATH = '13.jpg'; // 固定的圖片路徑
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
         const detectBtn = document.getElementById('detectBtn');
         const loading = document.getElementById('loading');
         const results = document.getElementById('results');
-        const confSlider = document.getElementById('confSlider');
         const confValue = document.getElementById('confValue');
+        const detectionImage = document.getElementById('detectionImage');
 
-        let currentImage = null;
+        let isDetecting = false;
+        let totalDetections = 0;
+        let totalCars = 0;
+        let totalMotorcycles = 0;
+        let detectCount = 0;
+        let isFirstDetection = true;
 
-        // 載入固定圖片
-        window.addEventListener('load', function() {
-            currentImage = new Image();
-            currentImage.onload = function() {
-                canvas.width = currentImage.width;
-                canvas.height = currentImage.height;
-                ctx.drawImage(currentImage, 0, 0);
-            };
-            currentImage.src = FIXED_IMAGE_PATH;
-        });
-
-        // 偵測按鈕
+        // 開始/停止偵測
         detectBtn.addEventListener('click', async function() {
-            loading.style.display = 'block';
-            detectBtn.disabled = true;
-            results.style.display = 'none';
+            if (!isDetecting) {
+                // 開始偵測
+                isDetecting = true;
+                isFirstDetection = true; // 重置首次檢測標誌，確保重新載入串流
+                detectBtn.textContent = '⏹️ 停止偵測';
+                detectBtn.style.background = 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
+                loading.style.display = 'block';
 
-            const threshold = parseFloat(confValue.textContent);
-
-            try {
-                // 取得固定圖片的 blob
-                const response = await fetch(FIXED_IMAGE_PATH);
-                const blob = await response.blob();
-                const file = new File([blob], FIXED_IMAGE_PATH, { type: blob.type });
-
-                const formData = new FormData();
-                formData.append('file', file);
-
-                const detectResponse = await fetch(`${API_URL}?conf_threshold=${threshold}`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await detectResponse.json();
-
-                if (data.success) {
-                    displayResults(data);
-                } else {
-                    alert('偵測失敗: ' + data.error);
-                }
-            } catch (error) {
-                alert('發生錯誤: ' + error.message);
-                console.error('Error:', error);
-            } finally {
+                continuousDetect();
+            } else {
+                // 停止偵測
+                isDetecting = false;
+                detectBtn.textContent = '🔍 開始偵測';
+                detectBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
                 loading.style.display = 'none';
-                detectBtn.disabled = false;
             }
         });
 
-        function displayResults(data) {
-            const detections = data.detections;
+        // 連續檢測循環
+        async function continuousDetect() {
+            while (isDetecting) {
+                await performDetection();
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
 
-            // 重繪圖片
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(currentImage, 0, 0);
+        // 執行單次檢測
+        async function performDetection() {
+            if (!isDetecting) return;
 
-            // 顏色池
-            const colors = [
-                '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
-                '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2'
-            ];
+            try {
+                const confidence = parseFloat(confValue.textContent);
+                const startTime = performance.now();
 
-            // 繪製偵測框
-            detections.forEach((det, idx) => {
-                const [x1, y1, x2, y2] = det.bbox;
-                const color = colors[det.class % colors.length];
+                // 第一次檢測時強制重新載入串流
+                const reload = isFirstDetection ? 'true' : 'false';
+                if (isFirstDetection) {
+                    console.log('🔄 首次檢測，重新載入串流畫面');
+                    isFirstDetection = false;
+                }
 
-                // 繪製邊框
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 3;
-                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-            });
+                const response = await fetch(`/capture_stream?confidence=${confidence}&reload=${reload}`);
+                const data = await response.json();
 
-            // 統計類別
-            const classCount = {};
-            detections.forEach(det => {
-                classCount[det.class_name] = (classCount[det.class_name] || 0) + 1;
-            });
+                const endTime = performance.now();
+                const processTime = Math.round(endTime - startTime);
 
-            // 更新綜觀數據
-            const totalCars = classCount['car'] || 0;
-            const totalMotorcycles = classCount['motorcycle'] || 0;
-            const avgConf = detections.length > 0
-                ? (detections.reduce((sum, det) => sum + det.score, 0) / detections.length * 100).toFixed(1)
-                : 0;
+                if (!isDetecting) return;
 
-            document.getElementById('totalDetections').textContent = detections.length;
-            document.getElementById('totalCars').textContent = totalCars;
-            document.getElementById('totalMotorcycles').textContent = totalMotorcycles;
+                if (data.success) {
+                    // 更新檢測圖片
+                    if (data.annotated_image) {
+                        detectionImage.src = data.annotated_image;
+                        detectionImage.style.display = 'block';
+
+                    if (loading.style.display !== 'none') {
+                        loading.style.display = 'none';
+                    }
+                    }
+
+                    // 更新統計
+                    totalCars += data.car_count || 0;
+                    totalMotorcycles += data.motorcycle_count || 0;
+                    totalDetections += data.total_count || 0;
+                    detectCount++;
+
+                    updateStats(data);
+
+                    console.log(`✅ 檢測完成 [${processTime}ms] - 汽車:${data.car_count} 機車:${data.motorcycle_count}`);
+                } else {
+                    console.error('❌ 檢測失敗:', data.error);
+                }
+            } catch (error) {
+                console.error('❌ 檢測錯誤:', error);
+            }
+        }
+
+        function updateStats(data) {
+            // 隱藏佔位符，顯示圖片
+            const placeholder = document.getElementById('noImagePlaceholder');
+            if (placeholder && data.annotated_image) {
+                placeholder.style.display = 'none';
+            }
+
+            // 更新即時數據
+            document.getElementById('totalDetections').textContent = data.total_count || 0;
+            document.getElementById('totalCars').textContent = data.car_count || 0;
+            document.getElementById('totalMotorcycles').textContent = data.motorcycle_count || 0;
+
+            // 顯示平均信心度（小數點後2位）
+            const avgConf = (data.avg_confidence * 100).toFixed(2);
             document.getElementById('avgConfidence').textContent = avgConf + '%';
 
-            // 顯示結果
-            results.innerHTML = `
-                <h3>📊 偵測結果</h3>
-                
-                <div class="stats">
-                    <div class="stat-box">
-                        <div class="stat-number">${detections.length}</div>
-                        <div class="stat-label">偵測物件</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number">${Object.keys(classCount).length}</div>
-                        <div class="stat-label">類別數量</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-number">${data.image_size.width} × ${data.image_size.height}</div>
-                        <div class="stat-label">圖片尺寸</div>
-                    </div>
-                </div>
+            // 更新後台數據頁面的詳細結果
+            if (data.total_count > 0) {
+                results.innerHTML = `
+                    <h3>📊 即時偵測結果</h3>
 
-                <div class="detection-list">
-                    ${detections.map((det, idx) => `
-                        <div class="detection-item">
-                            <strong>${idx + 1}. ${det.class_name}</strong>
-                            <div class="confidence">${(det.score * 100).toFixed(2)}%</div>
-                            <div style="margin-top: 8px; font-size: 0.9em; color: #666;">
-                                位置: (${Math.round(det.bbox[0])}, ${Math.round(det.bbox[1])})
-                            </div>
+                    <div class="stats">
+                        <div class="stat-box">
+                            <div class="stat-number">${data.total_count}</div>
+                            <div class="stat-label">當前偵測物件</div>
                         </div>
-                    `).join('')}
-                </div>
-            `;
-            
-            results.style.display = 'block';
+                        <div class="stat-box">
+                            <div class="stat-number">${data.car_count}</div>
+                            <div class="stat-label">汽車</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-number">${data.motorcycle_count}</div>
+                            <div class="stat-label">機車</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-number">${(data.avg_confidence * 100).toFixed(2)}%</div>
+                            <div class="stat-label">平均信心度</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px; padding: 15px; background: #f8f9ff; border-radius: 10px; border-left: 4px solid #667eea;">
+                        <p style="color: #333; margin: 0;">
+                            <strong>信心度閾值:</strong> ${(data.confidence_threshold * 100).toFixed(0)}%
+                            <br>
+                            <strong>檢測時間:</strong> ${new Date(data.timestamp * 1000).toLocaleTimeString('zh-TW')}
+                        </p>
+                    </div>
+                `;
+                results.style.display = 'block';
+            }
         }
     </script>
 </body>
