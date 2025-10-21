@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Road Edge Marker - Draw 40 Lines</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #34495e;
+            padding: 30px;
+            border-radius: 10px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #3498db;
+        }
+
+        .controls {
+            background: #2c3e50;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        button.danger {
+            background: #e74c3c;
+        }
+
+        button.danger:hover {
+            background: #c0392b;
+        }
+
+        button.success {
+            background: #27ae60;
+        }
+
+        button.success:hover {
+            background: #229954;
+        }
+
+        .canvas-container {
+            position: relative;
+            display: inline-block;
+            background: #000;
+            border: 3px solid #3498db;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+
+        .info {
+            background: #2c3e50;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .info h3 {
+            color: #3498db;
+            margin-bottom: 10px;
+        }
+
+        .coordinates {
+            background: #1a252f;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .line-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: #34495e;
+            border-radius: 4px;
+            border-left: 4px solid #3498db;
+        }
+
+        .line-item.complete {
+            border-left-color: #27ae60;
+        }
+
+        .status {
+            background: #3498db;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background: #27ae60;
+        }
+
+        .status.warning {
+            background: #f39c12;
+        }
+
+        code {
+            background: #1a252f;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #3498db;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛣️ Road Edge Marker Tool</h1>
+
+        <div class="controls">
+            <div class="button-group">
+                <button id="captureBtn" class="success">📸 Capture Frame from Stream</button>
+                <button id="clearBtn" class="danger">🗑️ Clear All</button>
+                <button id="undoBtn">↶ Undo Last Point</button>
+                <button id="exportBtn">💾 Export Coordinates</button>
+            </div>
+
+            <div class="status" id="status">
+                Click "Capture Frame" to start
+            </div>
+
+            <div style="color: #ecf0f1; line-height: 1.8;">
+                <strong>Instructions:</strong><br>
+                1. Click "Capture Frame" to get current stream image (640x640)<br>
+                2. Click on the image to mark points (<strong>80 points total for 40 lines</strong>)<br>
+                3. Each line needs 2 points (start and end)<br>
+                4. Click "Export Coordinates" when done to copy to clipboard
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="canvas" width="640" height="640"></canvas>
+        </div>
+
+        <div class="info">
+            <h3>📍 Coordinates (80 points for 40 lines)</h3>
+            <div class="coordinates" id="coordList">
+                No points marked yet.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const captureBtn = document.getElementById('captureBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const status = document.getElementById('status');
+        const coordList = document.getElementById('coordList');
+
+        let points = [];
+        let backgroundImage = null;
+
+        // Calculate angle of a line (in degrees)
+        function calculateAngle(p1, p2) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const radians = Math.atan2(dy, dx);
+            const degrees = radians * (180 / Math.PI);
+            return degrees;
+        }
+
+        // Get direction text from angle
+        function getDirectionText(angle) {
+            let normalizedAngle = angle;
+            if (normalizedAngle < 0) normalizedAngle += 360;
+
+            if (normalizedAngle >= 337.5 || normalizedAngle < 22.5) return 'East →';
+            if (normalizedAngle >= 22.5 && normalizedAngle < 67.5) return 'Southeast ↘';
+            if (normalizedAngle >= 67.5 && normalizedAngle < 112.5) return 'South ↓';
+            if (normalizedAngle >= 112.5 && normalizedAngle < 157.5) return 'Southwest ↙';
+            if (normalizedAngle >= 157.5 && normalizedAngle < 202.5) return 'West ←';
+            if (normalizedAngle >= 202.5 && normalizedAngle < 247.5) return 'Northwest ↖';
+            if (normalizedAngle >= 247.5 && normalizedAngle < 292.5) return 'North ↑';
+            if (normalizedAngle >= 292.5 && normalizedAngle < 337.5) return 'Northeast ↗';
+
+            return 'Unknown';
+        }
+
+        // Capture frame from server
+        captureBtn.addEventListener('click', async () => {
+            status.textContent = 'Capturing frame from stream...';
+            status.className = 'status';
+
+            try {
+                const response = await fetch('http://localhost:5000/capture_frame');
+                const data = await response.json();
+
+                if (data.success) {
+                    const img = new Image();
+                    img.onload = () => {
+                        backgroundImage = img;
+                        redraw();
+                        status.textContent = '✅ Frame captured! Click on image to mark points.';
+                        status.className = 'status success';
+                    };
+                    img.src = data.image;
+                } else {
+                    throw new Error(data.error || 'Capture failed');
+                }
+            } catch (error) {
+                status.textContent = '❌ Error: ' + error.message;
+                status.className = 'status danger';
+            }
+        });
+
+        // Canvas click to add point
+        canvas.addEventListener('click', (e) => {
+            if (!backgroundImage) {
+                alert('Please capture a frame first!');
+                return;
+            }
+
+            if (points.length >= 80) {
+                alert('All 80 points marked! (40 lines completed)');
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.round(e.clientX - rect.left);
+            const y = Math.round(e.clientY - rect.top);
+
+            points.push({ x, y });
+            redraw();
+            updateCoordList();
+
+            const lineNum = Math.floor((points.length - 1) / 2) + 1;
+            const pointInLine = ((points.length - 1) % 2) + 1;
+
+            if (points.length === 80) {
+                status.textContent = '✅ All 40 lines completed! Click "Export" to copy coordinates.';
+                status.className = 'status success';
+            } else {
+                status.textContent = `Line ${lineNum}, Point ${pointInLine}/2 marked. Total: ${points.length}/80`;
+                status.className = 'status';
+            }
+        });
+
+        // Clear all
+        clearBtn.addEventListener('click', () => {
+            if (confirm('Clear all points?')) {
+                points = [];
+                redraw();
+                updateCoordList();
+                status.textContent = 'All points cleared. Click on image to start marking.';
+                status.className = 'status warning';
+            }
+        });
+
+        // Undo last point
+        undoBtn.addEventListener('click', () => {
+            if (points.length > 0) {
+                points.pop();
+                redraw();
+                updateCoordList();
+                status.textContent = `Point removed. Total: ${points.length}/80`;
+                status.className = 'status warning';
+            }
+        });
+
+        // Export coordinates
+        exportBtn.addEventListener('click', () => {
+            if (points.length === 0) {
+                alert('No points marked yet!');
+                return;
+            }
+
+            if (points.length % 2 !== 0) {
+                if (!confirm(`You have ${points.length} points. The last line is incomplete (needs 2 points per line).\n\nDo you want to export anyway?`)) {
+                    return;
+                }
+            }
+
+            // Calculate angles for each complete line
+            const lineData = [];
+            const completeLines = Math.floor(points.length / 2);
+            for (let i = 0; i < completeLines; i++) {
+                const p1 = points[i * 2];
+                const p2 = points[i * 2 + 1];
+                const angle = calculateAngle(p1, p2);
+                const direction = getDirectionText(angle);
+                lineData.push({ p1, p2, angle, direction, lineNum: i + 1 });
+            }
+
+            // Format for JavaScript array with angles
+            const jsArray = 'const roadEdgePoints = [\n' +
+                points.map((p, i) => {
+                    const lineNum = Math.floor(i / 2) + 1;
+                    return `    [${p.x}, ${p.y}]${i < points.length - 1 ? ',' : ''}  // Line ${lineNum}`;
+                }).join('\n') +
+                '\n];';
+
+            // Format line angles (JavaScript)
+            const jsAngles = '\nconst lineAngles = [\n' +
+                lineData.map((line, i) => {
+                    return `    { line: ${line.lineNum}, angle: ${line.angle.toFixed(1)}, direction: '${line.direction}' }${i < lineData.length - 1 ? ',' : ''}`;
+                }).join('\n') +
+                '\n];';
+
+            // Format for Python list
+            const pyList = 'road_edge_points = [\n' +
+                points.map((p, i) => {
+                    const lineNum = Math.floor(i / 2) + 1;
+                    return `    (${p.x}, ${p.y})${i < points.length - 1 ? ',' : ''}  # Line ${lineNum}`;
+                }).join('\n') +
+                '\n]';
+
+            // Format line angles (Python)
+            const pyAngles = '\nline_angles = [\n' +
+                lineData.map((line, i) => {
+                    return `    {"line": ${line.lineNum}, "angle": ${line.angle.toFixed(1)}, "direction": "${line.direction}"}${i < lineData.length - 1 ? ',' : ''}`;
+                }).join('\n') +
+                '\n]';
+
+            // Line summary
+            const summary = '\n=== Line Angle Summary ===\n' +
+                lineData.map(line => {
+                    return `Line ${line.lineNum}: ${line.angle.toFixed(1)}° (${line.direction})`;
+                }).join('\n');
+
+            const output = `${summary}\n\n// JavaScript Format:\n${jsArray}${jsAngles}\n\n# Python Format:\n${pyList}${pyAngles}`;
+
+            // Create blob and download as text file
+            const blob = new Blob([output], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            a.download = `road_edge_lines.txt`;
+
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            alert(`✅ Exported ${completeLines} complete lines (${points.length} points) to file!\n\nIncludes:\n- Line angle summary\n- JavaScript format (with angles)\n- Python format (with angles)`);
+            console.log(output);
+        });
+
+        // Redraw canvas
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background image
+            if (backgroundImage) {
+                ctx.drawImage(backgroundImage, 0, 0, 640, 640);
+            }
+
+            // Draw completed lines (every 2 points)
+            ctx.strokeStyle = '#00FFFF';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < points.length - 1; i += 2) {
+                ctx.beginPath();
+                ctx.moveTo(points[i].x, points[i].y);
+                ctx.lineTo(points[i + 1].x, points[i + 1].y);
+                ctx.stroke();
+
+                // Draw angle at the midpoint of the line
+                const midX = (points[i].x + points[i + 1].x) / 2;
+                const midY = (points[i].y + points[i + 1].y) / 2;
+                const angle = calculateAngle(points[i], points[i + 1]);
+                const lineNum = Math.floor(i / 2) + 1;
+
+                // Draw angle text with background
+                ctx.font = 'bold 14px Arial';
+                const text = `L${lineNum}: ${angle.toFixed(0)}°`;
+                const textWidth = ctx.measureText(text).width;
+
+                // Background rectangle
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(midX - textWidth/2 - 4, midY - 18, textWidth + 8, 20);
+
+                // Text
+                ctx.fillStyle = '#00FFFF';
+                ctx.fillText(text, midX - textWidth/2, midY - 4);
+            }
+
+            // Draw points
+            points.forEach((p, i) => {
+                const lineNum = Math.floor(i / 2) + 1;
+                const isComplete = (i % 2 === 1);
+
+                // Point circle
+                ctx.fillStyle = isComplete ? '#27ae60' : '#e74c3c';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                // White border
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Label
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 12px Arial';
+                ctx.fillText(`${i + 1}`, p.x + 10, p.y - 10);
+            });
+
+            // Draw preview line if odd number of points
+            if (points.length % 2 === 1) {
+                const lastPoint = points[points.length - 1];
+                ctx.strokeStyle = 'rgba(231, 76, 60, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+
+                canvas.style.cursor = 'crosshair';
+            } else {
+                ctx.setLineDash([]);
+            }
+        }
+
+        // Update coordinate list
+        function updateCoordList() {
+            if (points.length === 0) {
+                coordList.innerHTML = 'No points marked yet.';
+                return;
+            }
+
+            let html = '';
+            for (let i = 0; i < 40; i++) {
+                const p1Index = i * 2;
+                const p2Index = i * 2 + 1;
+                const hasP1 = p1Index < points.length;
+                const hasP2 = p2Index < points.length;
+
+                const p1 = hasP1 ? points[p1Index] : null;
+                const p2 = hasP2 ? points[p2Index] : null;
+
+                const isComplete = hasP1 && hasP2;
+                const className = isComplete ? 'line-item complete' : 'line-item';
+
+                html += `<div class="${className}">`;
+                html += `<strong>Line ${i + 1}:</strong> `;
+
+                if (hasP1 && hasP2) {
+                    const angle = calculateAngle(p1, p2);
+                    const direction = getDirectionText(angle);
+                    html += `[${p1.x}, ${p1.y}] → [${p2.x}, ${p2.y}]<br>`;
+                    html += `<span style="color: #3498db;">Angle: ${angle.toFixed(1)}° | Direction: ${direction}</span> ✅`;
+                } else if (hasP1) {
+                    html += `[${p1.x}, ${p1.y}], [?, ?] ⏳`;
+                } else {
+                    html += `[?, ?], [?, ?] ⭕`;
+                }
+
+                html += `</div>`;
+            }
+
+            coordList.innerHTML = html;
+        }
+
+        // Initial draw
+        redraw();
+    </script>
+</body>
+</html>
