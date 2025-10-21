@@ -234,7 +234,7 @@
             border-radius: 15px;
             padding: 25px;
             margin-top: 30px;
-            display: none;
+            display: block;
         }
         
         .results h3 {
@@ -361,8 +361,8 @@
         <!-- 主頁 -->
         <div id="home" class="page active">
             <div class="container">
-                <h1>Object Detection</h1>
-                <p class="subtitle">Real-Time Detection Transformer</p>
+                <h1>車流辨識後台監測系統</h1>
+                <p class="subtitle">Detect by self-trained RT-DETR model</p>
 
                 <!-- 控制按鈕區 -->
                 <div class="controls">
@@ -397,28 +397,58 @@
                         </div>
                     </div>
 
-                    <!-- 右側：綜觀數據 -->
+                    <!-- 右側：各車道數據 -->
                     <div style="flex: 1; min-width: 400px;">
                         <h2 style="color: #667eea; margin-bottom: 25px; font-size: 1.8em; text-align: left;">📊 綜觀數據</h2>
                         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
-                            <div class="stat-box">
-                                <div class="stat-number" id="totalDetections">0</div>
-                                <div class="stat-label">當前偵測物件</div>
+                            <!-- 車道1 (AREA1) -->
+                            <div class="stat-box" style="background: linear-gradient(135deg, rgba(255,0,0,0.1), rgba(255,0,0,0.05)); border-left: 4px solid #ff0000;">
+                                <div style="font-weight: bold; color: #ff0000; margin-bottom: 10px;">🔴 基隆->市府向</div>
+                                <div style="font-size: 0.9em; color: #666;">
+                                    <div>汽車：<span id="area1Cars">0</span> 台</div>
+                                    <div>機車：<span id="area1Motorcycles">0</span> 台</div>
+                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area1Total">0</span> 台</div>
+                                </div>
                             </div>
-                            <div class="stat-box">
-                                <div class="stat-number" id="totalCars">0</div>
-                                <div class="stat-label">汽車數量</div>
+
+                            <!-- 車道2 (AREA2) -->
+                            <div class="stat-box" style="background: linear-gradient(135deg, rgba(0,255,0,0.1), rgba(0,255,0,0.05)); border-left: 4px solid #00cc00;">
+                                <div style="font-weight: bold; color: #00cc00; margin-bottom: 10px;">🟢 市府->基隆向</div>
+                                <div style="font-size: 0.9em; color: #666;">
+                                    <div>汽車：<span id="area2Cars">0</span> 台</div>
+                                    <div>機車：<span id="area2Motorcycles">0</span> 台</div>
+                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area2Total">0</span> 台</div>
+                                </div>
                             </div>
-                            <div class="stat-box">
-                                <div class="stat-number" id="totalMotorcycles">0</div>
-                                <div class="stat-label">機車數量</div>
+
+                            <!-- 車道3 (AREA3) -->
+                            <div class="stat-box" style="background: linear-gradient(135deg, rgba(0,0,255,0.1), rgba(0,0,255,0.05)); border-left: 4px solid #0066ff;">
+                                <div style="font-weight: bold; color: #0066ff; margin-bottom: 10px;">🔵 松高路西向</div>
+                                <div style="font-size: 0.9em; color: #666;">
+                                    <div>汽車：<span id="area3Cars">0</span> 台</div>
+                                    <div>機車：<span id="area3Motorcycles">0</span> 台</div>
+                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area3Total">0</span> 台</div>
+                                </div>
                             </div>
-                            <div class="stat-box">
-                                <div class="stat-number" id="avgConfidence">0%</div>
-                                <div class="stat-label">平均信心度</div>
+
+                            <!-- 車道4 (AREA4) -->
+                            <div class="stat-box" style="background: linear-gradient(135deg, rgba(255,255,0,0.1), rgba(255,255,0,0.05)); border-left: 4px solid #cccc00;">
+                                <div style="font-weight: bold; color: #cc9900; margin-bottom: 10px;">🟡 松高路東向</div>
+                                <div style="font-size: 0.9em; color: #666;">
+                                    <div>汽車：<span id="area4Cars">0</span> 台</div>
+                                    <div>機車：<span id="area4Motorcycles">0</span> 台</div>
+                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area4Total">0</span> 台</div>
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- 時間顯示區塊 -->
+                <div style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">當前時間 (GMT+8)</div>
+                    <div id="currentTime" style="font-size: 1.5em; font-weight: 600; color: #667eea;">--:--:--</div>
+                    <div id="currentDate" style="font-size: 1.1em; color: #888; margin-top: 5px;">---- 年 -- 月 -- 日</div>
                 </div>
             </div>
         </div>
@@ -427,10 +457,86 @@
         <div id="detection" class="page">
             <div class="container">
                 <h1>後台數據</h1>
-                <p class="subtitle">偵測結果詳細資訊</p>
+                <p class="subtitle">各車道車輛統計</p>
 
                 <div class="results" id="results">
-                    <p style="text-align: center; color: #666; padding: 40px;">尚無偵測結果，請先在主頁執行偵測</p>
+                    <h3>各車道詳細統計</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px; margin-top: 30px;">
+                        <!-- 車道1 詳細統計 -->
+                        <div style="background: linear-gradient(135deg, rgba(255,0,0,0.08), rgba(255,0,0,0.03)); padding: 25px; border-radius: 12px; border: 2px solid rgba(255,0,0,0.2);">
+                            <h4 style="color: #ff0000; margin-bottom: 20px; font-size: 1.4em; border-bottom: 2px solid rgba(255,0,0,0.3); padding-bottom: 10px;">🔴 基隆->市府向</h4>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea1Cars">0</div>
+                                <div class="stat-label">汽車數量</div>
+                            </div>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea1Motorcycles">0</div>
+                                <div class="stat-label">機車數量</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number" id="backendArea1Total">0</div>
+                                <div class="stat-label">車輛總數</div>
+                            </div>
+                        </div>
+
+                        <!-- 車道2 詳細統計 -->
+                        <div style="background: linear-gradient(135deg, rgba(0,255,0,0.08), rgba(0,255,0,0.03)); padding: 25px; border-radius: 12px; border: 2px solid rgba(0,255,0,0.2);">
+                            <h4 style="color: #00cc00; margin-bottom: 20px; font-size: 1.4em; border-bottom: 2px solid rgba(0,255,0,0.3); padding-bottom: 10px;">🟢 市府->基隆向</h4>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea2Cars">0</div>
+                                <div class="stat-label">汽車數量</div>
+                            </div>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea2Motorcycles">0</div>
+                                <div class="stat-label">機車數量</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number" id="backendArea2Total">0</div>
+                                <div class="stat-label">車輛總數</div>
+                            </div>
+                        </div>
+
+                        <!-- 車道3 詳細統計 -->
+                        <div style="background: linear-gradient(135deg, rgba(0,0,255,0.08), rgba(0,0,255,0.03)); padding: 25px; border-radius: 12px; border: 2px solid rgba(0,0,255,0.2);">
+                            <h4 style="color: #0066ff; margin-bottom: 20px; font-size: 1.4em; border-bottom: 2px solid rgba(0,0,255,0.3); padding-bottom: 10px;">🔵 松高路西向</h4>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea3Cars">0</div>
+                                <div class="stat-label">汽車數量</div>
+                            </div>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea3Motorcycles">0</div>
+                                <div class="stat-label">機車數量</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number" id="backendArea3Total">0</div>
+                                <div class="stat-label">車輛總數</div>
+                            </div>
+                        </div>
+
+                        <!-- 車道4 詳細統計 -->
+                        <div style="background: linear-gradient(135deg, rgba(255,255,0,0.08), rgba(255,255,0,0.03)); padding: 25px; border-radius: 12px; border: 2px solid rgba(255,255,0,0.2);">
+                            <h4 style="color: #cc9900; margin-bottom: 20px; font-size: 1.4em; border-bottom: 2px solid rgba(255,255,0,0.3); padding-bottom: 10px;">🟡 松高路東向</h4>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea4Cars">0</div>
+                                <div class="stat-label">汽車數量</div>
+                            </div>
+                            <div class="stat-box" style="margin-bottom: 15px;">
+                                <div class="stat-number" id="backendArea4Motorcycles">0</div>
+                                <div class="stat-label">機車數量</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number" id="backendArea4Total">0</div>
+                                <div class="stat-label">車輛總數</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 時間顯示區塊 -->
+                <div style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); border-radius: 15px; text-align: center;">
+                    <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">當前時間 (GMT+8)</div>
+                    <div id="backendCurrentTime" style="font-size: 1.5em; font-weight: 600; color: #667eea;">--:--:--</div>
+                    <div id="backendCurrentDate" style="font-size: 1.1em; color: #888; margin-top: 5px;">---- 年 -- 月 -- 日</div>
                 </div>
             </div>
         </div>
