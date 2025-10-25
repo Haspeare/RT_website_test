@@ -404,40 +404,68 @@
                             <!-- 車道1 (AREA1) -->
                             <div class="stat-box" style="background: linear-gradient(135deg, rgba(255,0,0,0.1), rgba(255,0,0,0.05)); border-left: 4px solid #ff0000;">
                                 <div style="font-weight: bold; color: #ff0000; margin-bottom: 10px;">🔴 基隆->市府向</div>
-                                <div style="font-size: 0.9em; color: #666;">
-                                    <div>汽車：<span id="area1Cars">0</span> 台</div>
-                                    <div>機車：<span id="area1Motorcycles">0</span> 台</div>
-                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area1Total">0</span> 台</div>
+                                <div style="font-size: 0.85em; color: #666;">
+                                    <div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,0,0,0.2);">
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📈 車流量</div>
+                                        <div style="font-weight: 600; color: #ff0000; font-size: 1.1em;"><span id="area1TotalFlow">0</span> 台</div>
+                                        <div style="font-size: 0.75em; color: #888; margin-top: 2px;">汽車：<span id="area1CarsFlow">0</span> | 機車：<span id="area1MotorcyclesFlow">0</span></div>
+                                        <div style="font-size: 0.7em; color: #aaa; margin-top: 3px;">⏱️ <span id="area1Duration">00:00:00</span></div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📊 即時車輛</div>
+                                        <div>汽車：<span id="area1Cars">0</span> 台 | 機車：<span id="area1Motorcycles">0</span> 台 | 總數 <span id="area1Total">0</span> 台</div>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- 車道2 (AREA2) -->
                             <div class="stat-box" style="background: linear-gradient(135deg, rgba(0,255,0,0.1), rgba(0,255,0,0.05)); border-left: 4px solid #00cc00;">
                                 <div style="font-weight: bold; color: #00cc00; margin-bottom: 10px;">🟢 市府->基隆向</div>
-                                <div style="font-size: 0.9em; color: #666;">
-                                    <div>汽車：<span id="area2Cars">0</span> 台</div>
-                                    <div>機車：<span id="area2Motorcycles">0</span> 台</div>
-                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area2Total">0</span> 台</div>
+                                <div style="font-size: 0.85em; color: #666;">
+                                    <div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(0,255,0,0.2);">
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📈 車流量</div>
+                                        <div style="font-weight: 600; color: #00cc00; font-size: 1.1em;"><span id="area2TotalFlow">0</span> 台</div>
+                                        <div style="font-size: 0.75em; color: #888; margin-top: 2px;">汽車：<span id="area2CarsFlow">0</span> | 機車：<span id="area2MotorcyclesFlow">0</span></div>
+                                        <div style="font-size: 0.7em; color: #aaa; margin-top: 3px;">⏱️ <span id="area2Duration">00:00:00</span></div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📊 即時車輛</div>
+                                        <div>汽車：<span id="area2Cars">0</span> 台 | 機車：<span id="area2Motorcycles">0</span> 台 | 總數 <span id="area2Total">0</span> 台</div>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- 車道3 (AREA3) -->
                             <div class="stat-box" style="background: linear-gradient(135deg, rgba(0,0,255,0.1), rgba(0,0,255,0.05)); border-left: 4px solid #0066ff;">
                                 <div style="font-weight: bold; color: #0066ff; margin-bottom: 10px;">🔵 松高路西向</div>
-                                <div style="font-size: 0.9em; color: #666;">
-                                    <div>汽車：<span id="area3Cars">0</span> 台</div>
-                                    <div>機車：<span id="area3Motorcycles">0</span> 台</div>
-                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area3Total">0</span> 台</div>
+                                <div style="font-size: 0.85em; color: #666;">
+                                    <div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(0,0,255,0.2);">
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📈 車流量</div>
+                                        <div style="font-weight: 600; color: #0066ff; font-size: 1.1em;"><span id="area3TotalFlow">0</span> 台</div>
+                                        <div style="font-size: 0.75em; color: #888; margin-top: 2px;">汽車：<span id="area3CarsFlow">0</span> | 機車：<span id="area3MotorcyclesFlow">0</span></div>
+                                        <div style="font-size: 0.7em; color: #aaa; margin-top: 3px;">⏱️ <span id="area3Duration">00:00:00</span></div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📊 即時車輛</div>
+                                        <div>汽車：<span id="area3Cars">0</span> 台 | 機車：<span id="area3Motorcycles">0</span> 台 | 總數 <span id="area3Total">0</span> 台</div>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- 車道4 (AREA4) -->
                             <div class="stat-box" style="background: linear-gradient(135deg, rgba(255,255,0,0.1), rgba(255,255,0,0.05)); border-left: 4px solid #cccc00;">
                                 <div style="font-weight: bold; color: #cc9900; margin-bottom: 10px;">🟡 松高路東向</div>
-                                <div style="font-size: 0.9em; color: #666;">
-                                    <div>汽車：<span id="area4Cars">0</span> 台</div>
-                                    <div>機車：<span id="area4Motorcycles">0</span> 台</div>
-                                    <div style="margin-top: 5px; font-weight: 600; color: #333;">總數：<span id="area4Total">0</span> 台</div>
+                                <div style="font-size: 0.85em; color: #666;">
+                                    <div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,0,0.2);">
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📈 車流量</div>
+                                        <div style="font-weight: 600; color: #cc9900; font-size: 1.1em;"><span id="area4TotalFlow">0</span> 台</div>
+                                        <div style="font-size: 0.75em; color: #888; margin-top: 2px;">汽車：<span id="area4CarsFlow">0</span> | 機車：<span id="area4MotorcyclesFlow">0</span></div>
+                                        <div style="font-size: 0.7em; color: #aaa; margin-top: 3px;">⏱️ <span id="area4Duration">00:00:00</span></div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size: 1em; color: #999; margin-bottom: 3px;">📊 即時車輛</div>
+                                        <div>汽車：<span id="area4Cars">0</span> 台 | 機車：<span id="area4Motorcycles">0</span> 台 | 總數 <span id="area4Total">0</span> 台</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

@@ -18,6 +18,151 @@ app.use(express.static(path.join(__dirname, '..')));  // Serve from project root
 // HLS Stream URL (from record_hls.js)
 const M3U8_URL = "https://jtmctrafficcctv2.gov.taipei/NVR/f0a5bf25-956f-4343-bed3-59df341071ea/live.m3u8";
 
+// ================= Persistent FFmpeg Stream Manager =================
+let persistentFFmpeg = null;
+let latestFrameBuffer = null;
+let latestFrameTimestamp = null;
+let ffmpegStarting = false;
+let sseClients = []; // Store SSE connections
+
+// Start persistent FFmpeg process
+function startPersistentFFmpeg() {
+    if (persistentFFmpeg || ffmpegStarting) {
+        console.log('⚠️  FFmpeg already running or starting');
+        return;
+    }
+
+    ffmpegStarting = true;
+    console.log('🎬 Starting persistent FFmpeg stream...');
+
+    const outputPath = path.join(__dirname, '..', 'stream_snapshot.jpg');
+
+    // Use FFmpeg to continuously capture frames
+    // Output one frame every 1 second to reduce CPU load
+    persistentFFmpeg = spawn('ffmpeg', [
+        '-hide_banner',
+        '-loglevel', 'error',  // Only show errors
+        '-analyzeduration', '500000',  // 0.5 second analysis
+        '-probesize', '65536',  // 64KB probe
+        '-max_delay', '0',
+        '-fflags', 'nobuffer+fastseek+flush_packets',
+        '-flags', 'low_delay',
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '2',
+        '-i', M3U8_URL,
+        '-vf', 'scale=640:640:flags=fast_bilinear,fps=1',  // 1 fps output
+        '-c:v', 'mjpeg',
+        '-q:v', '8',  // JPEG quality (2-31, lower is better, 8 is good balance)
+        '-f', 'image2',
+        '-update', '1',  // Continuously update the same file
+        '-y',
+        outputPath
+    ]);
+
+    let lastReadTime = 0;
+    const READ_INTERVAL = 1000; // Read file every 1 second
+
+    // Monitor file changes and read into buffer
+    const fileWatcher = setInterval(() => {
+        if (!persistentFFmpeg) {
+            clearInterval(fileWatcher);
+            return;
+        }
+
+        const now = Date.now();
+        if (now - lastReadTime < READ_INTERVAL) return;
+
+        if (fs.existsSync(outputPath)) {
+            try {
+                const stats = fs.statSync(outputPath);
+                const fileModTime = stats.mtimeMs;
+
+                // Only read if file was modified recently (within last 2 seconds)
+                if (now - fileModTime < 2000) {
+                    const buffer = fs.readFileSync(outputPath);
+
+                    // Only update if buffer has content
+                    if (buffer.length > 0) {
+                        latestFrameBuffer = buffer;
+                        latestFrameTimestamp = now;
+                        lastReadTime = now;
+
+                        // Broadcast to all SSE clients
+                        broadcastFrameToClients(buffer);
+                    }
+                }
+            } catch (err) {
+                // File might be being written, skip this cycle
+            }
+        }
+    }, 200); // Check every 200ms
+
+    persistentFFmpeg.stderr.on('data', (data) => {
+        const msg = data.toString();
+        if (msg.includes('error') || msg.includes('Error')) {
+            console.error('❌ FFmpeg error:', msg.substring(0, 200));
+        }
+    });
+
+    persistentFFmpeg.on('close', (code) => {
+        console.log(`⚠️  Persistent FFmpeg closed with code ${code}`);
+        clearInterval(fileWatcher);
+        persistentFFmpeg = null;
+        ffmpegStarting = false;
+        latestFrameBuffer = null;
+
+        // Auto-restart after 3 seconds
+        setTimeout(() => {
+            console.log('🔄 Auto-restarting FFmpeg...');
+            startPersistentFFmpeg();
+        }, 3000);
+    });
+
+    persistentFFmpeg.on('error', (err) => {
+        console.error('❌ FFmpeg execution error:', err);
+        clearInterval(fileWatcher);
+        persistentFFmpeg = null;
+        ffmpegStarting = false;
+    });
+
+    // Mark as started
+    setTimeout(() => {
+        ffmpegStarting = false;
+        console.log('✅ Persistent FFmpeg started successfully');
+    }, 2000);
+}
+
+// Stop persistent FFmpeg
+function stopPersistentFFmpeg() {
+    if (persistentFFmpeg) {
+        console.log('⏹️  Stopping persistent FFmpeg...');
+        persistentFFmpeg.kill('SIGTERM');
+        persistentFFmpeg = null;
+        latestFrameBuffer = null;
+    }
+}
+
+// Broadcast frame to all SSE clients
+function broadcastFrameToClients(buffer) {
+    if (sseClients.length === 0) return;
+
+    const base64 = buffer.toString('base64');
+    const data = JSON.stringify({
+        image: `data:image/jpeg;base64,${base64}`,
+        timestamp: Date.now()
+    });
+
+    sseClients = sseClients.filter(client => {
+        try {
+            client.write(`data: ${data}\n\n`);
+            return true;
+        } catch (err) {
+            return false; // Remove disconnected clients
+        }
+    });
+}
+
 // ================= Route Definitions =================
 
 // Serve index.html
@@ -62,7 +207,73 @@ function getStreamFrameRate(callback) {
     });
 }
 
-// Capture single frame from HLS stream (using record_hls.js method)
+// SSE endpoint for streaming frames
+app.get('/stream_frames', (req, res) => {
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    console.log('📡 New SSE client connected');
+
+    // Add client to list
+    sseClients.push(res);
+
+    // Start FFmpeg if not already running
+    if (!persistentFFmpeg && !ffmpegStarting) {
+        startPersistentFFmpeg();
+    }
+
+    // Send initial frame if available
+    if (latestFrameBuffer) {
+        try {
+            const base64 = latestFrameBuffer.toString('base64');
+            const data = JSON.stringify({
+                image: `data:image/jpeg;base64,${base64}`,
+                timestamp: latestFrameTimestamp
+            });
+            res.write(`data: ${data}\n\n`);
+        } catch (err) {
+            console.error('Error sending initial frame:', err);
+        }
+    }
+
+    // Handle client disconnect
+    req.on('close', () => {
+        console.log('📡 SSE client disconnected');
+        sseClients = sseClients.filter(client => client !== res);
+
+        // Stop FFmpeg if no clients
+        if (sseClients.length === 0) {
+            console.log('⏹️  No more clients, stopping FFmpeg in 10 seconds...');
+            setTimeout(() => {
+                if (sseClients.length === 0) {
+                    stopPersistentFFmpeg();
+                }
+            }, 10000);
+        }
+    });
+});
+
+// Get latest frame (fallback for compatibility)
+app.get('/get_latest_frame', (req, res) => {
+    if (!latestFrameBuffer) {
+        return res.status(503).json({
+            success: false,
+            error: 'No frame available yet'
+        });
+    }
+
+    const base64 = latestFrameBuffer.toString('base64');
+    res.json({
+        success: true,
+        image: `data:image/jpeg;base64,${base64}`,
+        timestamp: latestFrameTimestamp
+    });
+});
+
+// Capture single frame from HLS stream (legacy method, kept for compatibility)
 app.get('/capture_frame', async (req, res) => {
     const outputPath = path.join(__dirname, '..', 'stream_snapshot.jpg');
 

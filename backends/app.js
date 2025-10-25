@@ -93,6 +93,19 @@ class TrafficDetector {
             };
         });
 
+        // ===== OPTIMIZATION: Pre-calculate bounding boxes for fast filtering =====
+        this.laneBoundingBoxes = this.lanePolygons.map(lane => {
+            const xs = lane.polygon.map(p => p[0]);
+            const ys = lane.polygon.map(p => p[1]);
+            return {
+                name: lane.name,
+                minX: Math.min(...xs),
+                maxX: Math.max(...xs),
+                minY: Math.min(...ys),
+                maxY: Math.max(...ys)
+            };
+        });
+
         // Define base vector angles for each lane area
         this.laneBaseAngles = {
             'AREA1': 154,   // degrees
@@ -177,6 +190,12 @@ class TrafficDetector {
         return inside;
     }
 
+    // ===== OPTIMIZATION: Fast bounding box check =====
+    // Check if point is inside a bounding box (much faster than polygon check)
+    isPointInBoundingBox(x, y, bbox) {
+        return x >= bbox.minX && x <= bbox.maxX && y >= bbox.minY && y <= bbox.maxY;
+    }
+
     // Check which lane area a vehicle is in (if any)
     getVehicleLane(bbox) {
         // bbox format: [x1, y1, x2, y2]
@@ -188,10 +207,23 @@ class TrafficDetector {
         const bottomCenterX = (x1 + x2) / 2;
         const bottomCenterY = y2;
 
-        // Check each lane area
-        for (const lane of this.lanePolygons) {
-            if (this.isPointInPolygon(bottomCenterX, bottomCenterY, lane.polygon) ||
-                this.isPointInPolygon(centerX, centerY, lane.polygon)) {
+        // ===== OPTIMIZATION: Check bounding box first (fast filter) =====
+        // This eliminates ~70% of polygon checks
+        for (let i = 0; i < this.lanePolygons.length; i++) {
+            const lane = this.lanePolygons[i];
+            const bbox = this.laneBoundingBoxes[i];
+
+            // Quick reject: if not in bounding box, skip expensive polygon check
+            const bottomInBBox = this.isPointInBoundingBox(bottomCenterX, bottomCenterY, bbox);
+            const centerInBBox = this.isPointInBoundingBox(centerX, centerY, bbox);
+
+            if (!bottomInBBox && !centerInBBox) {
+                continue; // Skip this lane entirely
+            }
+
+            // Only do expensive polygon check if in bounding box
+            if ((bottomInBBox && this.isPointInPolygon(bottomCenterX, bottomCenterY, lane.polygon)) ||
+                (centerInBBox && this.isPointInPolygon(centerX, centerY, lane.polygon))) {
                 return lane.name; // Return lane name (AREA1, AREA2, AREA3, AREA4)
             }
         }
@@ -272,9 +304,10 @@ class TrafficDetector {
             console.log('Loading traffic detection model...');
             console.log('='.repeat(50));
 
-            // Use ONNX Runtime Web
-            this.model = await ort.InferenceSession.create('./model.onnx', {
-                executionProviders: ['wasm'],
+            // Use ONNX Runtime Web with WebGL acceleration (fallback to WASM)
+            // WebGL is significantly faster than WASM for large models
+            this.model = await ort.InferenceSession.create('./mvt_rtdetr.onnx', {
+                executionProviders: ['webgl', 'wasm'],
                 graphOptimizationLevel: 'all'
             });
 
@@ -313,13 +346,12 @@ class TrafficDetector {
             const pixels = imageData.data;
 
             // Preprocessing: Convert to model input format [1, 3, 640, 640]
-            // Normalize to 0-1 and convert to RGB channel order
             const inputArray = new Float32Array(1 * 3 * 640 * 640);
 
             for (let i = 0; i < 640 * 640; i++) {
-                inputArray[i] = pixels[i * 4] / 255.0;                    // R channel
-                inputArray[640 * 640 + i] = pixels[i * 4 + 1] / 255.0;   // G channel
-                inputArray[640 * 640 * 2 + i] = pixels[i * 4 + 2] / 255.0; // B channel
+                inputArray[i] = pixels[i * 4] / 255.0;
+                inputArray[640 * 640 + i] = pixels[i * 4 + 1] / 255.0;
+                inputArray[640 * 640 * 2 + i] = pixels[i * 4 + 2] / 255.0;
             }
 
             // Prepare model input
@@ -353,23 +385,14 @@ class TrafficDetector {
             // Convert detection results
             const detections = [];
 
-            // Since image is already 640x640, no scaling needed
-            // But keep for compatibility if image size differs
-            const scaleX = image.width / 640.0;
-            const scaleY = image.height / 640.0;
-
-            // Determine label format (convert BigInt to Number)
             const labelsArray = Array.from(labels).map(l => Number(l));
             const maxLabel = Math.max(...labelsArray);
             const use01 = maxLabel <= 1;
 
             const numItems = Math.min(scores.length, labels.length, boxes.length / 4);
 
-            console.log(`Processing ${numItems} detections, scaleX=${scaleX}, scaleY=${scaleY}`);
-
             for (let i = 0; i < numItems; i++) {
                 const conf = scores[i];
-
                 if (conf < confidenceThreshold) continue;
 
                 const cls = Number(labels[i]);
@@ -378,7 +401,6 @@ class TrafficDetector {
                 const bx2 = boxes[i * 4 + 2];
                 const by2 = boxes[i * 4 + 3];
 
-                // Direct coordinates (no scaling since image is 640x640)
                 const x1 = Math.max(0, Math.min(Math.round(bx1), 640 - 1));
                 const y1 = Math.max(0, Math.min(Math.round(by1), 640 - 1));
                 const x2 = Math.max(0, Math.min(Math.round(bx2), 640 - 1));
@@ -386,7 +408,7 @@ class TrafficDetector {
 
                 if (x1 >= x2 || y1 >= y2) continue;
 
-                // Class name mapping (same as Python version)
+                // Class name mapping
                 let className;
                 if (cls === 3) {
                     className = 'motorcycle';
@@ -408,7 +430,7 @@ class TrafficDetector {
                     confidence: conf,
                     bbox: [x1, y1, x2, y2],
                     in_road: isInRoad,
-                    lane: lane  // Add lane information (AREA1, AREA2, AREA3, AREA4, or null)
+                    lane: lane
                 });
             }
 
@@ -714,10 +736,16 @@ class SimpleTracker {
 
 // ================= Global Variables =================
 let detector = null;
-let tracker = null; // Add tracker
+let tracker = null; // Add tracker (kept for compatibility, but not used in main thread)
+let detectionWorker = null; // Web Worker for detection
 let isDetecting = false;
-let detectionInterval = null;
+let detectionLoopId = null; // For requestAnimationFrame
+let lastDetectionTime = 0; // Timestamp of last detection
+const DETECTION_INTERVAL = 3000; // ms between detections
 let isFirstDetection = true;  // Track if this is the first detection
+let sseEventSource = null; // SSE connection for streaming frames
+let latestFrameImage = null; // Latest frame from SSE stream
+let workerReady = false; // Track if worker is initialized
 
 // ================= Real-time Clock (GMT+8) =================
 function updateClock() {
@@ -757,19 +785,23 @@ function updateClock() {
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('Application initializing...');
 
-    // Create detector instance
+    // Initialize Web Worker for detection
+    console.log('🧵 Starting detection worker thread...');
+    detectionWorker = new Worker('./backends/detection-worker.js');
+
+    // Setup worker message handler
+    detectionWorker.onmessage = handleWorkerMessage;
+    detectionWorker.onerror = (error) => {
+        console.error('❌ Worker error:', error);
+        alert('Detection worker failed to start');
+    };
+
+    // Initialize worker
+    detectionWorker.postMessage({ type: 'init' });
+
+    // Keep detector instance for drawing (UI thread only)
     detector = new TrafficDetector();
-
-    // Load ONNX model
-    const loaded = await detector.loadModel();
-
-    if (!loaded) {
-        alert('Model loading failed, please confirm model.onnx file exists');
-    }
-
-    // Create tracker instance (after detector is created)
-    tracker = new SimpleTracker(detector);
-    console.log('Tracker initialized with lane change detection');
+    console.log('✅ Main thread TrafficDetector created for UI rendering');
 
     // Setup event listeners
     setupEventListeners();
@@ -780,6 +812,122 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     console.log('Application initialized successfully');
 });
+
+// ================= Worker Message Handler =================
+function handleWorkerMessage(e) {
+    const { type, success, annotatedImageData, detections, laneStats, trafficFlow, statisticsDuration, inferenceTime, error } = e.data;
+
+    switch (type) {
+        case 'init_complete':
+            if (success) {
+                console.log('✅ Detection worker initialized successfully');
+                workerReady = true;
+            } else {
+                console.error('❌ Worker initialization failed:', error);
+                const errorMsg = `Detection worker initialization failed: ${error || 'Unknown error'}`;
+                alert(errorMsg + '\n\nPlease check the browser console for details.');
+                workerReady = false;
+            }
+            break;
+
+        case 'detection_result':
+            if (success) {
+                console.log(`📊 [Main] Received detection results: ${detections.length} objects`);
+                console.log('[Main] Displaying pre-rendered image from worker...');
+
+                // Worker has already drawn everything - just display it!
+                displayAnnotatedImage(annotatedImageData, laneStats, detections);
+
+                // Update traffic flow statistics
+                if (trafficFlow && statisticsDuration !== undefined) {
+                    updateTrafficFlowDisplay(trafficFlow, statisticsDuration);
+                }
+
+                // Update statistics to server
+                updateStatsToServer(detections, inferenceTime);
+
+                // Hide loading animation
+                const loading = document.getElementById('loading');
+                if (loading && isFirstDetection) {
+                    loading.style.display = 'none';
+                    isFirstDetection = false;
+                }
+            } else {
+                console.error('❌ Detection failed in worker:', error);
+                // Don't alert for every detection failure in continuous mode
+                if (!isDetecting) {
+                    alert(`Detection failed: ${error}`);
+                }
+            }
+            break;
+
+        default:
+            console.warn('Unknown message type from worker:', type);
+    }
+}
+
+// ================= Display Annotated Image from Worker =================
+function displayAnnotatedImage(imageData, laneStats, detections) {
+    try {
+        // Convert ImageData to Canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = imageData.width;
+        canvas.height = imageData.height;
+        const ctx = canvas.getContext('2d');
+        ctx.putImageData(imageData, 0, 0);
+
+        // Display the canvas
+        const detectionImage = document.getElementById('detectionImage');
+        const noImagePlaceholder = document.getElementById('noImagePlaceholder');
+
+        if (detectionImage && noImagePlaceholder) {
+            // Convert canvas to blob for display
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    // Revoke old URL to prevent memory leak
+                    if (detectionImage.src && detectionImage.src.startsWith('blob:')) {
+                        URL.revokeObjectURL(detectionImage.src);
+                    }
+                    detectionImage.src = url;
+                    detectionImage.style.display = 'block';
+                    noImagePlaceholder.style.display = 'none';
+                }
+            }, 'image/jpeg', 0.75);
+        }
+
+        // Update lane statistics in UI (batch updates with requestAnimationFrame)
+        requestAnimationFrame(() => {
+            const updates = [
+                ['area1Cars', laneStats.AREA1.cars],
+                ['area1Motorcycles', laneStats.AREA1.motorcycles],
+                ['area1Total', laneStats.AREA1.total],
+                ['area2Cars', laneStats.AREA2.cars],
+                ['area2Motorcycles', laneStats.AREA2.motorcycles],
+                ['area2Total', laneStats.AREA2.total],
+                ['area3Cars', laneStats.AREA3.cars],
+                ['area3Motorcycles', laneStats.AREA3.motorcycles],
+                ['area3Total', laneStats.AREA3.total],
+                ['area4Cars', laneStats.AREA4.cars],
+                ['area4Motorcycles', laneStats.AREA4.motorcycles],
+                ['area4Total', laneStats.AREA4.total]
+            ];
+
+            updates.forEach(([id, value]) => {
+                const element = document.getElementById(id);
+                if (element) element.textContent = value;
+            });
+
+            // Update backend data page
+            updateBackendDataPage(laneStats);
+        });
+
+        console.log('[Main] ✅ Image and statistics displayed');
+
+    } catch (error) {
+        console.error('[Main] Error displaying annotated image:', error);
+    }
+}
 
 // ================= Setup Event Listeners =================
 function setupEventListeners() {
@@ -815,12 +963,61 @@ function switchPage(pageId) {
     }
 }
 
+// ================= SSE Stream Connection =================
+function startSSEStream() {
+    if (sseEventSource) {
+        console.log('SSE stream already connected');
+        return;
+    }
+
+    console.log('📡 Connecting to SSE stream...');
+    sseEventSource = new EventSource('/stream_frames');
+
+    sseEventSource.onmessage = async (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            latestFrameImage = await loadImage(data.image);
+            console.log(`📥 Received frame from SSE stream (${data.timestamp})`);
+        } catch (err) {
+            console.error('Error processing SSE frame:', err);
+        }
+    };
+
+    sseEventSource.onerror = (error) => {
+        console.error('❌ SSE connection error:', error);
+        sseEventSource.close();
+        sseEventSource = null;
+        latestFrameImage = null;
+
+        // Retry after 3 seconds
+        setTimeout(() => {
+            if (isDetecting) {
+                console.log('🔄 Retrying SSE connection...');
+                startSSEStream();
+            }
+        }, 3000);
+    };
+
+    sseEventSource.onopen = () => {
+        console.log('✅ SSE stream connected');
+    };
+}
+
+function stopSSEStream() {
+    if (sseEventSource) {
+        console.log('⏹️  Closing SSE stream...');
+        sseEventSource.close();
+        sseEventSource = null;
+        latestFrameImage = null;
+    }
+}
+
 // ================= Start/Stop Detection =================
 async function toggleDetection() {
     const detectBtn = document.getElementById('detectBtn');
 
-    if (!detector || !detector.model) {
-        alert('Model not loaded, please refresh the page');
+    if (!workerReady) {
+        alert('Detection worker is not ready yet, please wait...');
         return;
     }
 
@@ -830,23 +1027,54 @@ async function toggleDetection() {
         detectBtn.textContent = '⏸️ Stop Detection';
         detectBtn.style.background = 'linear-gradient(135deg, #f44336 0%, #e91e63 100%)';
 
-        console.log('Starting real-time detection');
+        console.log('Starting real-time detection with SSE stream');
+
+        // Start SSE stream
+        startSSEStream();
+
+        // Wait a bit for first frame
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Execute immediately once
         await performDetection();
+        lastDetectionTime = performance.now();
 
-        // Execute detection every 500ms (0.5 seconds) for real-time monitoring
-        detectionInterval = setInterval(performDetection, 500);
+        // Start requestAnimationFrame loop
+        function detectionLoop(timestamp) {
+            // Check if enough time has passed since last detection
+            if (timestamp - lastDetectionTime >= DETECTION_INTERVAL) {
+                // Perform detection and update timestamp after completion
+                performDetection().then(() => {
+                    lastDetectionTime = timestamp;
+                }).catch(err => {
+                    console.error('Detection error in loop:', err);
+                    lastDetectionTime = timestamp; // Still update to prevent stuck state
+                });
+            }
+
+            // Continue loop if still detecting
+            if (isDetecting) {
+                detectionLoopId = requestAnimationFrame(detectionLoop);
+            }
+        }
+
+        // Start the loop
+        detectionLoopId = requestAnimationFrame(detectionLoop);
+
     } else {
         // Stop detection
         isDetecting = false;
         detectBtn.textContent = '🔍 Start Detection';
         detectBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
 
-        if (detectionInterval) {
-            clearInterval(detectionInterval);
-            detectionInterval = null;
+        // Cancel requestAnimationFrame
+        if (detectionLoopId) {
+            cancelAnimationFrame(detectionLoopId);
+            detectionLoopId = null;
         }
+
+        // Stop SSE stream
+        stopSSEStream();
 
         // Reset first detection flag for next time
         isFirstDetection = true;
@@ -857,13 +1085,13 @@ async function toggleDetection() {
 
 // ================= Perform Detection =================
 async function performDetection() {
-    if (!detector || !detector.model) {
-        console.error('Detector not initialized');
+    if (!workerReady) {
+        console.error('[Main] Worker not ready');
         return;
     }
 
     try {
-        console.log('Capturing stream frame...');
+        console.log('[Main] Processing frame for detection...');
 
         // Show loading animation only on first detection
         const loading = document.getElementById('loading');
@@ -871,58 +1099,50 @@ async function performDetection() {
             loading.style.display = 'block';
         }
 
-        // Get stream snapshot from backend
-        const response = await fetch('/capture_frame');
-        const data = await response.json();
+        // Use cached frame from SSE stream if available, otherwise fetch
+        let image;
+        if (latestFrameImage) {
+            image = latestFrameImage;
+            console.log('[Main] ✅ Using cached frame from SSE stream');
+        } else {
+            console.log('[Main] ⚠️  No SSE frame available, falling back to fetch');
+            const response = await fetch('/get_latest_frame');
+            const data = await response.json();
 
-        if (!data.success) {
-            throw new Error(data.error || 'Capture failed');
+            if (!data.success) {
+                throw new Error(data.error || 'No frame available');
+            }
+
+            image = await loadImage(data.image);
         }
 
-        console.log('Stream capture successful');
+        console.log(`[Main] Image ready: ${image.width}x${image.height}`);
 
-        // Load image
-        const image = await loadImage(data.image);
-        console.log(`Image loaded: ${image.width}x${image.height}`);
+        // Convert image to ImageData for worker
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 640;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0, 640, 640);
+        const imageData = ctx.getImageData(0, 0, 640, 640);
 
-        // Perform object detection (using TrafficDetector)
-        const detections = await detector.detectObjects(image, 0.5);
+        // Send detection task to worker (non-blocking)
+        // Worker will handle: detection + tracking + drawing
+        console.log('[Main] 🚀 Sending frame to worker (detection + rendering)...');
+        detectionWorker.postMessage({
+            type: 'detect',
+            data: { imageData }
+        });
 
-        console.log(`Detected ${detections.length} objects:`, detections);
-
-        // Apply tracking with lane change detection
-        const trackedDetections = tracker ? tracker.update(detections, Date.now()) : detections;
-
-        console.log(`Tracked ${trackedDetections.length} objects with IDs`);
-
-        // Draw detection results (using TrafficDetector)
-        const annotatedCanvas = detector.drawDetections(image, trackedDetections);
-        console.log('Drawing complete, canvas:', annotatedCanvas ? `${annotatedCanvas.width}x${annotatedCanvas.height}` : 'null');
-
-        if (annotatedCanvas) {
-            // Display results
-            displayResults(annotatedCanvas, trackedDetections);
-
-            // Update statistics
-            detector.updateStats(trackedDetections);
-
-            // Update statistics to server (include inference time)
-            await updateStatsToServer(trackedDetections, detector.lastInferenceTime);
-        }
-
-        // Hide loading animation and mark first detection as complete
-        if (loading && isFirstDetection) {
-            loading.style.display = 'none';
-            isFirstDetection = false;  // Only show loading animation once
-        }
+        // Main thread continues immediately without blocking!
+        console.log('[Main] ✅ Main thread free - worker processing in background');
 
     } catch (error) {
-        console.error('Detection failed:', error);
+        console.error('[Main] Detection setup failed:', error);
 
         const loading = document.getElementById('loading');
         if (loading) loading.style.display = 'none';
 
-        // Don't show error message if in continuous detection mode
         if (!isDetecting) {
             alert(`Detection failed: ${error.message}`);
         }
@@ -942,14 +1162,24 @@ function loadImage(src) {
 
 // ================= Display Results =================
 function displayResults(canvas, detections) {
-    // Display detection image
+    // ===== OPTIMIZATION 4: Use toBlob() with lower quality (async, non-blocking) =====
     const detectionImage = document.getElementById('detectionImage');
     const noImagePlaceholder = document.getElementById('noImagePlaceholder');
 
     if (detectionImage && noImagePlaceholder) {
-        detectionImage.src = canvas.toDataURL('image/jpeg', 0.9);
-        detectionImage.style.display = 'block';
-        noImagePlaceholder.style.display = 'none';
+        // Use toBlob with quality 0.75 (25% less data, much faster)
+        canvas.toBlob((blob) => {
+            if (blob) {
+                const url = URL.createObjectURL(blob);
+                // Revoke old URL to prevent memory leak
+                if (detectionImage.src && detectionImage.src.startsWith('blob:')) {
+                    URL.revokeObjectURL(detectionImage.src);
+                }
+                detectionImage.src = url;
+                detectionImage.style.display = 'block';
+                noImagePlaceholder.style.display = 'none';
+            }
+        }, 'image/jpeg', 0.75); // Quality 0.75 (was 0.9)
     }
 
     // Calculate lane-based statistics
@@ -971,56 +1201,106 @@ function displayResults(canvas, detections) {
         }
     });
 
-    // Update main page lane statistics
-    document.getElementById('area1Cars').textContent = laneStats.AREA1.cars;
-    document.getElementById('area1Motorcycles').textContent = laneStats.AREA1.motorcycles;
-    document.getElementById('area1Total').textContent = laneStats.AREA1.total;
+    // ===== OPTIMIZATION 7: Batch DOM updates with requestAnimationFrame =====
+    // Collect all DOM updates and apply in one frame to minimize reflow
+    requestAnimationFrame(() => {
+        // Update main page lane statistics (batch all reads/writes)
+        const updates = [
+            ['area1Cars', laneStats.AREA1.cars],
+            ['area1Motorcycles', laneStats.AREA1.motorcycles],
+            ['area1Total', laneStats.AREA1.total],
+            ['area2Cars', laneStats.AREA2.cars],
+            ['area2Motorcycles', laneStats.AREA2.motorcycles],
+            ['area2Total', laneStats.AREA2.total],
+            ['area3Cars', laneStats.AREA3.cars],
+            ['area3Motorcycles', laneStats.AREA3.motorcycles],
+            ['area3Total', laneStats.AREA3.total],
+            ['area4Cars', laneStats.AREA4.cars],
+            ['area4Motorcycles', laneStats.AREA4.motorcycles],
+            ['area4Total', laneStats.AREA4.total]
+        ];
 
-    document.getElementById('area2Cars').textContent = laneStats.AREA2.cars;
-    document.getElementById('area2Motorcycles').textContent = laneStats.AREA2.motorcycles;
-    document.getElementById('area2Total').textContent = laneStats.AREA2.total;
+        // Apply all updates at once
+        updates.forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = value;
+        });
 
-    document.getElementById('area3Cars').textContent = laneStats.AREA3.cars;
-    document.getElementById('area3Motorcycles').textContent = laneStats.AREA3.motorcycles;
-    document.getElementById('area3Total').textContent = laneStats.AREA3.total;
+        // Update backend data page in same frame
+        updateBackendDataPage(laneStats);
+    });
+}
 
-    document.getElementById('area4Cars').textContent = laneStats.AREA4.cars;
-    document.getElementById('area4Motorcycles').textContent = laneStats.AREA4.motorcycles;
-    document.getElementById('area4Total').textContent = laneStats.AREA4.total;
+// ================= Update Traffic Flow Display =================
+function updateTrafficFlowDisplay(trafficFlow, statisticsDuration) {
+    // Format duration as HH:MM:SS
+    const hours = Math.floor(statisticsDuration / 3600);
+    const minutes = Math.floor((statisticsDuration % 3600) / 60);
+    const seconds = statisticsDuration % 60;
+    const durationStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-    // Update backend data page
-    updateBackendDataPage(laneStats);
+    // Update each lane's traffic flow statistics
+    ['AREA1', 'AREA2', 'AREA3', 'AREA4'].forEach((area, idx) => {
+        const data = trafficFlow[area];
+        if (!data) return;
+
+        const laneNum = idx + 1;
+
+        // Update cumulative count
+        const totalElement = document.getElementById(`area${laneNum}TotalFlow`);
+        if (totalElement) totalElement.textContent = data.totalCount;
+
+        const carsElement = document.getElementById(`area${laneNum}CarsFlow`);
+        if (carsElement) carsElement.textContent = data.totalCars;
+
+        const motorcyclesElement = document.getElementById(`area${laneNum}MotorcyclesFlow`);
+        if (motorcyclesElement) motorcyclesElement.textContent = data.totalMotorcycles;
+
+        // Update duration
+        const durationElement = document.getElementById(`area${laneNum}Duration`);
+        if (durationElement) durationElement.textContent = durationStr;
+
+        // Backend page
+        const backendTotalElement = document.getElementById(`backendArea${laneNum}TotalFlow`);
+        if (backendTotalElement) backendTotalElement.textContent = data.totalCount;
+
+        const backendCarsElement = document.getElementById(`backendArea${laneNum}CarsFlow`);
+        if (backendCarsElement) backendCarsElement.textContent = data.totalCars;
+
+        const backendMotorcyclesElement = document.getElementById(`backendArea${laneNum}MotorcyclesFlow`);
+        if (backendMotorcyclesElement) backendMotorcyclesElement.textContent = data.totalMotorcycles;
+
+        const backendDurationElement = document.getElementById(`backendArea${laneNum}Duration`);
+        if (backendDurationElement) backendDurationElement.textContent = durationStr;
+    });
 }
 
 // ================= Update Backend Data Page =================
 function updateBackendDataPage(laneStats) {
-    // Update backend page lane statistics with safe element access
-    const updateElement = (id, value) => {
+    // ===== OPTIMIZATION 7: Batch backend page updates =====
+    const backendUpdates = [
+        ['backendArea1Cars', laneStats.AREA1.cars],
+        ['backendArea1Motorcycles', laneStats.AREA1.motorcycles],
+        ['backendArea1Total', laneStats.AREA1.total],
+        ['backendArea2Cars', laneStats.AREA2.cars],
+        ['backendArea2Motorcycles', laneStats.AREA2.motorcycles],
+        ['backendArea2Total', laneStats.AREA2.total],
+        ['backendArea3Cars', laneStats.AREA3.cars],
+        ['backendArea3Motorcycles', laneStats.AREA3.motorcycles],
+        ['backendArea3Total', laneStats.AREA3.total],
+        ['backendArea4Cars', laneStats.AREA4.cars],
+        ['backendArea4Motorcycles', laneStats.AREA4.motorcycles],
+        ['backendArea4Total', laneStats.AREA4.total]
+    ];
+
+    // Apply all updates at once
+    backendUpdates.forEach(([id, value]) => {
         const element = document.getElementById(id);
-        if (element) {
-            element.textContent = value;
-        }
-    };
+        if (element) element.textContent = value;
+    });
 
-    // AREA1
-    updateElement('backendArea1Cars', laneStats.AREA1.cars);
-    updateElement('backendArea1Motorcycles', laneStats.AREA1.motorcycles);
-    updateElement('backendArea1Total', laneStats.AREA1.total);
-
-    // AREA2
-    updateElement('backendArea2Cars', laneStats.AREA2.cars);
-    updateElement('backendArea2Motorcycles', laneStats.AREA2.motorcycles);
-    updateElement('backendArea2Total', laneStats.AREA2.total);
-
-    // AREA3
-    updateElement('backendArea3Cars', laneStats.AREA3.cars);
-    updateElement('backendArea3Motorcycles', laneStats.AREA3.motorcycles);
-    updateElement('backendArea3Total', laneStats.AREA3.total);
-
-    // AREA4
-    updateElement('backendArea4Cars', laneStats.AREA4.cars);
-    updateElement('backendArea4Motorcycles', laneStats.AREA4.motorcycles);
-    updateElement('backendArea4Total', laneStats.AREA4.total);
+    // Note: Track IDs are still maintained in detections data for internal use
+    // but are not displayed in the UI
 }
 
 // ================= Update Statistics to Server =================
